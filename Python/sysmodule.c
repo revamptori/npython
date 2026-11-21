@@ -1346,6 +1346,29 @@ sys_getswitchinterval_impl(PyObject *module)
     return 1e-6 * _PyEval_GetSwitchInterval();
 }
 
+
+/* npython: statistics about the adaptive GIL (see ceval_gil.c). */
+static PyObject *
+sys_getgilstats_impl(PyObject *module)
+{
+    unsigned long interval, min_interval, max_interval;
+    unsigned long switch_count, contention_count, uncontended_count;
+    int enabled;
+
+    _PyEval_GetGILStats(&interval, &min_interval, &max_interval,
+                        &switch_count, &contention_count,
+                        &uncontended_count, &enabled);
+
+    return Py_BuildValue("{s:k,s:k,s:k,s:k,s:k,s:k,s:i}",
+                         "switch_interval", (unsigned long long)interval,
+                         "min_switch_interval", (unsigned long long)min_interval,
+                         "max_switch_interval", (unsigned long long)max_interval,
+                         "switch_count", (unsigned long long)switch_count,
+                         "contention_count", (unsigned long long)contention_count,
+                         "uncontended_count", (unsigned long long)uncontended_count,
+                         "enabled", enabled);
+}
+
 /*[clinic input]
 sys.setrecursionlimit
 
@@ -2915,6 +2938,10 @@ static PyMethodDef sys_methods[] = {
     SYS_GETTOTALREFCOUNT_METHODDEF
     SYS_GETREFCOUNT_METHODDEF
     SYS_GETRECURSIONLIMIT_METHODDEF
+    /* npython: GIL statistics for the adaptive GIL. */
+    {"getgilstats", _PyCFunction_CAST(sys_getgilstats_impl),
+     METH_NOARGS,
+     "Return statistics about the adaptive GIL."},
     SYS_GETSIZEOF_METHODDEF
     SYS__GETFRAME_METHODDEF
     SYS__GETFRAMEMODULENAME_METHODDEF
@@ -4061,6 +4088,7 @@ _PySys_InitCore(PyThreadState *tstate, PyObject *sysdict)
 #undef COPY_SYS_ATTR
 
     SET_SYS_FROM_STRING("version", Py_GetVersion());
+    SET_SYS_FROM_STRING("npython_version", NPYTHON_VERSION);
     SET_SYS("hexversion", PyLong_FromLong(PY_VERSION_HEX));
     SET_SYS("_git", Py_BuildValue("(szz)", "CPython", _Py_gitidentifier(),
                                   _Py_gitversion()));

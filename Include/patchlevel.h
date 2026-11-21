@@ -11,6 +11,14 @@
    without the rest of Python.h.
 */
 
+/* npython version identification (independent of the CPython version above).
+ *
+ * npython-1.0 was the first release.  Each successful merge increases the
+ * version by 0.1, and each multiple of 5 increases it by 1:
+ * 1.0, 1.1, ..., 1.4, 1.5, 2.0, 2.1, ...
+ */
+#define NPYTHON_VERSION "1.1"
+
 /* Values for PY_RELEASE_LEVEL */
 #define PY_RELEASE_LEVEL_ALPHA  0xA
 #define PY_RELEASE_LEVEL_BETA   0xB

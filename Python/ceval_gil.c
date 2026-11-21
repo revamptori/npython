@@ -146,10 +146,25 @@ update_eval_breaker_for_thread(PyInterpreterState *interp, PyThreadState *tstate
 
 #define DEFAULT_INTERVAL 5000
 
+/* Bounds for the adaptive switch interval, in microseconds. */
+#define MIN_INTERVAL 1000
+#define MAX_INTERVAL 50000
+
+/* How many consecutive uncontended acquisitions happen before the interval
+   is raised back up. */
+#define UNCONTENDED_STRETCH 16
+
 static void _gil_initialize(struct _gil_runtime_state *gil)
 {
     gil->locked = -1;
     gil->interval = DEFAULT_INTERVAL;
+    gil->min_interval = MIN_INTERVAL;
+    gil->max_interval = MAX_INTERVAL;
+    gil->ceiling_interval = DEFAULT_INTERVAL;
+    gil->switch_number = 0;
+    gil->contention_count = 0;
+    gil->uncontended_count = 0;
+    gil->uncontended_streak = 0;
 }
 
 static int gil_created(struct _gil_runtime_state *gil)
@@ -323,8 +338,12 @@ take_gil(PyThreadState *tstate)
 
     tstate->gil_requested = 1;
 
+    /* Did we have to wait for the GIL?  That means another thread holds it,
+       i.e. there is contention on this GIL. */
+    int waited = 0;
     int drop_requested = 0;
     while (_Py_atomic_load_int_relaxed(&gil->locked)) {
+        waited = 1;
         unsigned long saved_switchnum = gil->switch_number;
 
         unsigned long interval = _Py_atomic_load_ulong_relaxed(&gil->interval);
@@ -389,6 +408,38 @@ take_gil(PyThreadState *tstate)
         ++gil->switch_number;
     }
 
+    /* Adaptive GIL: tune the switch interval to the measured contention.
+       Under contention we lower the interval so waiting threads get the GIL
+       sooner; when the GIL is uncontended we raise the interval back up to
+       reduce switching overhead. */
+    if (waited) {
+        gil->contention_count++;
+        if (gil->interval > gil->min_interval) {
+            unsigned long interval = gil->interval / 2;
+            if (interval < gil->min_interval) {
+                interval = gil->min_interval;
+            }
+            _Py_atomic_store_ulong_relaxed(&gil->interval, interval);
+        }
+        gil->uncontended_streak = 0;
+    } else {
+        gil->uncontended_count++;
+        gil->uncontended_streak++;
+        if (gil->uncontended_streak % UNCONTENDED_STRETCH == 0) {
+            unsigned long cap = gil->ceiling_interval;
+            if (cap > gil->max_interval) {
+                cap = gil->max_interval;
+            }
+            if (gil->interval < cap) {
+                unsigned long interval = gil->interval * 3 / 2;
+                if (interval > cap) {
+                    interval = cap;
+                }
+                _Py_atomic_store_ulong_relaxed(&gil->interval, interval);
+            }
+        }
+    }
+
 #ifdef FORCE_SWITCHING
     COND_SIGNAL(gil->switch_cond);
     MUTEX_UNLOCK(gil->switch_mutex);
@@ -426,6 +477,9 @@ void _PyEval_SetSwitchInterval(unsigned long microseconds)
     PyInterpreterState *interp = _PyInterpreterState_GET();
     struct _gil_runtime_state *gil = interp->ceval.gil;
     assert(gil != NULL);
+    /* Remember the user's request so the adaptive raise-back never
+       exceeds it. */
+    gil->ceiling_interval = microseconds;
     _Py_atomic_store_ulong_relaxed(&gil->interval, microseconds);
 }
 
@@ -435,6 +489,44 @@ unsigned long _PyEval_GetSwitchInterval(void)
     struct _gil_runtime_state *gil = interp->ceval.gil;
     assert(gil != NULL);
     return _Py_atomic_load_ulong_relaxed(&gil->interval);
+}
+
+void _PyEval_GetGILStats(unsigned long *interval, unsigned long *min_interval,
+                         unsigned long *max_interval,
+                         unsigned long *switch_count,
+                         unsigned long *contention_count,
+                         unsigned long *uncontended_count, int *enabled)
+{
+    PyInterpreterState *interp = _PyInterpreterState_GET();
+    struct _gil_runtime_state *gil = interp->ceval.gil;
+    assert(gil != NULL);
+    if (interval != NULL) {
+        *interval = _Py_atomic_load_ulong_relaxed(&gil->interval);
+    }
+    if (min_interval != NULL) {
+        *min_interval = gil->min_interval;
+    }
+    if (max_interval != NULL) {
+        *max_interval = gil->max_interval;
+    }
+    if (switch_count != NULL) {
+        *switch_count = gil->switch_number;
+    }
+    if (contention_count != NULL) {
+        *contention_count = gil->contention_count;
+    }
+    if (uncontended_count != NULL) {
+        *uncontended_count = gil->uncontended_count;
+    }
+#ifdef Py_GIL_DISABLED
+    if (enabled != NULL) {
+        *enabled = _Py_atomic_load_int_relaxed(&gil->enabled) != 0;
+    }
+#else
+    if (enabled != NULL) {
+        *enabled = 1;
+    }
+#endif
 }
 
 

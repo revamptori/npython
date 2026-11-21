@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""npy: the npython command line tool.
+
+Run ``npy run file.py [args...]`` to execute *file.py* with npython.
+Any other invocation falls back to a regular Python interpreter: only
+``npy run`` is npython, everything else is Python.
+"""
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _find_npython():
+    """Locate the npython interpreter next to this script."""
+    candidates = [
+        os.path.join(_HERE, "python"),      # source tree
+        os.path.join(_HERE, "python3.16"),  # installed (versioned)
+        os.path.join(_HERE, "python3"),     # installed
+        os.path.join(_HERE, "python"),      # installed (unversioned)
+    ]
+    seen = set()
+    for candidate in candidates:
+        candidate = os.path.normpath(candidate)
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return os.environ.get("NPY_PYTHON")
+
+
+def _npy_lib_dir():
+    """Directory whose ``npy`` subdirectory is the npy package, or None."""
+    candidate = os.path.join(_HERE, "Lib", "npy")  # source tree layout
+    if os.path.isdir(candidate) and os.path.exists(
+        os.path.join(candidate, "__init__.py")
+    ):
+        return os.path.join(_HERE, "Lib")
+    return None
+
+
+def main():
+    npython = _find_npython()
+    if npython is None:
+        print(
+            "npy: fatal: the npython interpreter was not found. "
+            "Build npython first (./configure && make python) or set NPY_PYTHON.",
+            file=sys.stderr,
+        )
+        return 1
+
+    env = dict(os.environ)
+    npy_lib = _npy_lib_dir()
+    if npy_lib:
+        # Source tree: make the in-tree Lib/npy package importable.
+        env["PYTHONPATH"] = npy_lib + os.pathsep + env.get("PYTHONPATH", "")
+
+    # Delegate everything to the npy package running under npython.
+    os.execv(npython, [npython, "-m", "npy"] + sys.argv[1:])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

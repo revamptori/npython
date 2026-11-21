@@ -2499,6 +2499,7 @@ altbininstall: all @FRAMEWORKPYTHONW@
 	else \
 		$(INSTALL_PROGRAM) $(STRIPFLAG) Mac/pythonw $(DESTDIR)$(BINDIR)/python$(LDVERSION)$(EXE); \
 	fi
+	$(INSTALL_SCRIPT) $(srcdir)/npy $(DESTDIR)$(BINDIR)/npy \
 	-if test "$(VERSION)" != "$(LDVERSION)"; then \
 		if test -f $(DESTDIR)$(BINDIR)/python$(VERSION)$(EXE) -o -h $(DESTDIR)$(BINDIR)/python$(VERSION)$(EXE); \
 		then rm -f $(DESTDIR)$(BINDIR)/python$(VERSION)$(EXE); \
@@ -2648,6 +2649,7 @@ LIBSUBDIRS=	asyncio \
 		sqlite3 \
 		string \
 		sysconfig \
+		npy \
 		tkinter \
 		tomllib \
 		turtledemo \

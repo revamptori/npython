@@ -35,6 +35,14 @@ PyAPI_FUNC(PyObject*) _PyEval_GetBuiltin(PyObject *);
 
 extern void _PyEval_SetSwitchInterval(unsigned long microseconds);
 extern unsigned long _PyEval_GetSwitchInterval(void);
+// npython GIL statistics (adaptive switch interval)
+extern void _PyEval_GetGILStats(unsigned long *interval,
+                                unsigned long *min_interval,
+                                unsigned long *max_interval,
+                                unsigned long *switch_count,
+                                unsigned long *contention_count,
+                                unsigned long *uncontended_count,
+                                int *enabled);
 
 // Export for '_queue' shared extension
 PyAPI_FUNC(int) _PyEval_MakePendingCalls(PyThreadState *);
