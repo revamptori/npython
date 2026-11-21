@@ -39,6 +39,16 @@ struct _gil_runtime_state {
 #endif
     /* microseconds (the Python API uses seconds, though) */
     unsigned long interval;
+    /* Smallest / largest interval the adaptive GIL may use.  The interval
+       is lowered under contention so threads switch faster, and raised back
+       up when the GIL is uncontended to reduce switching overhead. */
+    unsigned long min_interval;
+    unsigned long max_interval;
+    /* Ceiling for the automatic raise-back: the adaptive GIL never raises
+       the interval above this value on its own.  Initialized to the default
+       interval and updated by sys.setswitchinterval(), so an explicit user
+       request is always honored. */
+    unsigned long ceiling_interval;
     /* Last PyThreadState holding / having held the GIL. This helps us
        know whether anyone else was scheduled after we dropped the GIL. */
     PyThreadState* last_holder;
@@ -47,6 +57,10 @@ struct _gil_runtime_state {
     int locked;
     /* Number of GIL switches since the beginning. */
     unsigned long switch_number;
+    /* GIL statistics (used by sys.getgilstats()). */
+    unsigned long contention_count;   /* acquisitions that had to wait */
+    unsigned long uncontended_count;  /* acquisitions that did not wait */
+    unsigned long uncontended_streak; /* consecutive uncontended acquisitions */
     /* This condition variable allows one or several threads to wait
        until the GIL is released. In addition, the mutex also protects
        the above variables. */
